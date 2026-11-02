@@ -78,7 +78,7 @@ async function readTextFile(file) {
 
 /* ================= 章节解析 ================= */
 const CHAPTER_RE =
-  /^[ \t　]*(?:第[0-9〇零一二三四五六七八九十百千万两０-９]+[章节回卷部篇集][^\n]{0,40}|楔子|序章|序言|序|前言|引子|尾声|后记|番外[^\n]{0,30}|Chapter\s+[0-9０-９]+[^\n]{0,40}|卷\s*[0-9〇零一二三四五六七八九十]+[^\n]{0,30})[ \t　]*$/gm;
+  /^[ \t　]*(?:第[0-9〇零一二三四五六七八九十百千万两０-９]+[章节回卷部篇集][^\n]{0,40}|子|序章|序言|序|前言|引子|尾声|后记|番外[^\n]{0,30}|Chapter\s+[0-9０-９]+[^\n]{0,40}|卷\s*[0-9〇零一二三四五六七八九十]+[^\n]{0,30})[ \t　]*$/gm;
 
 function parseChapters(text) {
   const matches = [];
@@ -129,18 +129,21 @@ const state = {
 };
 
 const settings = Object.assign(
-  { fontSize: 19, lineHeight: 19, theme: 'light', autoMode: 'scroll', autoSpeed: 4, autoPageSec: 25 },
+  { fontSize: 19, lineHeight: 19, theme: 'light', autoMode: 'scroll', autoSpeed: 4, autoPageSec: 25, readWidth: 44 },
   JSON.parse(localStorage.getItem('qy-settings') || '{}')
 );
 
 function applySettings() {
   document.documentElement.style.setProperty('--fs', settings.fontSize + 'px');
   document.documentElement.style.setProperty('--lh', settings.lineHeight / 10);
+  document.documentElement.style.setProperty('--read-width', settings.readWidth + 'rem');
   document.body.dataset.theme = settings.theme;
   $('#fontSizeRange').value = settings.fontSize;
   $('#fontSizeVal').textContent = settings.fontSize;
   $('#lineHeightRange').value = settings.lineHeight;
   $('#lineHeightVal').textContent = (settings.lineHeight / 10).toFixed(1);
+  $('#readWidthRange').value = settings.readWidth;
+  $('#readWidthVal').textContent = settings.readWidth;
   $$('.theme-dot').forEach((d) => d.classList.toggle('active', d.dataset.theme === settings.theme));
   // 自动阅读面板
   $('#modeScroll').classList.toggle('active', settings.autoMode === 'scroll');
@@ -587,6 +590,7 @@ $('#prevMatch').addEventListener('click', () => gotoMatch(state.search.idx - 1))
 // 设置面板
 $('#fontSizeRange').addEventListener('input', (e) => { settings.fontSize = +e.target.value; applySettings(); });
 $('#lineHeightRange').addEventListener('input', (e) => { settings.lineHeight = +e.target.value; applySettings(); });
+$('#readWidthRange').addEventListener('input', (e) => { settings.readWidth = +e.target.value; applySettings(); });
 $$('.theme-dot').forEach((d) => d.addEventListener('click', () => { settings.theme = d.dataset.theme; applySettings(); }));
 
 // 键盘快捷键
