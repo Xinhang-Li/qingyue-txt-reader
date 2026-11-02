@@ -637,7 +637,7 @@ addEventListener('keydown', (e) => {
 addEventListener('beforeunload', saveProgressNow);
 
 /* ================= 语音朗读（Web Speech API） ================= */
-const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null, token: 0, retries: 0 };
+const tts = { active: false, paused: false, queue: [], idx: 0, queuedUpTo: -1, readingEl: null, token: 0, retries: 0 };
 let ttsVoices = [];
 
 function loadVoices() {
@@ -669,9 +669,9 @@ if ('speechSynthesis' in window) {
   }, 8000);
 }
 
-// 把长段落按标点切成 ≤120 字的小段，避免语音引擎截断或卡死
+// 把长段落按标点切成 ≤160 字的小段，避免语音引擎截断或卡死
 // 逐字符切分，不用正则后行断言（Safari < 16.4 不支持 lookbehind，会直接抛错）
-function chunkForSpeech(text, max = 120) {
+function chunkForSpeech(text, max = 160) {
   const PUNCT = '。！？；…，、：,.!?;:';
   const parts = [];
   let seg = '';
@@ -737,30 +737,57 @@ function speakCurrent() {
   if (!tts.active || tts.paused) return;
   const item = tts.queue[tts.idx];
   if (!item) { stopTts('已朗读完全书 🎉'); return; }
-  ttsHighlight(item);
+  // 高亮统一在 utterance 的 onstart 里做，避免重复滚动
   const tk = ++tts.token; // 令牌：cancel 后迟到的 onend/onerror 不再推进队列
-  const u = new SpeechSynthesisUtterance(item.text);
-  u.rate = settings.ttsRate / 10;
-  const v = ttsVoices.find((x) => x.voiceURI === settings.ttsVoice);
-  if (v) u.voice = v;
-  u.onend = () => { if (tk !== tts.token || !tts.active || tts.paused) return; tts.retries = 0; tts.idx++; speakCurrent(); };
-  u.onerror = (e) => {
-    if (tk !== tts.token) return;
-    if (e.error === 'canceled' || e.error === 'interrupted') {
-      // cancel 余波误伤新 utterance：稍候重读当前段，避免队列停摆
-      if (tts.active && !tts.paused && tts.retries < 3) {
-        tts.retries++;
-        setTimeout(() => { if (tk === tts.token && tts.active && !tts.paused) speakCurrent(); }, 150);
-      }
-      return;
-    }
-    if (tts.active) { tts.idx++; speakCurrent(); } // 跳过读不了的片段
-  };
-  speechSynthesis.speak(u);
+  tts.queuedUpTo = tts.idx - 1;
+  pumpQueue(tk);
   // 看门狗：个别平台 cancel+speak 后 utterance 被静默丢弃（无任何回调），2.5 秒后若无声则重读
   setTimeout(() => {
     if (tk === tts.token && tts.active && !tts.paused && !speechSynthesis.speaking && !speechSynthesis.pending) speakCurrent();
   }, 2500);
+}
+
+// 预排一句到下一句：引擎在句间无缝衔接，消除「每句读完等 onend 再发起」带来的停顿
+function pumpQueue(tk) {
+  while (tts.queuedUpTo < Math.min(tts.idx + 1, tts.queue.length - 1)) {
+    tts.queuedUpTo++;
+    enqueueSpeech(tts.queuedUpTo, tk);
+  }
+}
+
+function enqueueSpeech(i, tk) {
+  const item = tts.queue[i];
+  const u = new SpeechSynthesisUtterance(item.text);
+  u.rate = settings.ttsRate / 10;
+  const v = ttsVoices.find((x) => x.voiceURI === settings.ttsVoice);
+  if (v) u.voice = v;
+  u.onstart = () => {
+    if (tk !== tts.token || !tts.active) return;
+    tts.idx = i;
+    tts.retries = 0;
+    ttsHighlight(item);
+    pumpQueue(tk); // 当前句开播后立即预排下一句
+  };
+  u.onend = () => {
+    if (tk !== tts.token || !tts.active || tts.paused) return;
+    if (i >= tts.queue.length - 1) stopTts('已朗读完全书 🎉'); // 已预排的下一句会自动接续，无需干预
+  };
+  u.onerror = (e) => {
+    if (tk !== tts.token) return;
+    if (e.error === 'canceled' || e.error === 'interrupted') {
+      // cancel 余波误伤新 utterance：稍候重读当前段，避免队列停摆；
+      // 一次 cancel 会让预排的两句都报错，用新令牌去重，只重启一次
+      if (tts.active && !tts.paused && tts.retries < 3) {
+        tts.retries++;
+        const tk2 = ++tts.token;
+        setTimeout(() => { if (tk2 === tts.token && tts.active && !tts.paused) speakCurrent(); }, 150);
+      }
+      return;
+    }
+    // 读不了的片段：已预排的后续会自动接续；若是队尾则收尾
+    if (tts.active && i >= tts.queue.length - 1) stopTts('已朗读完全书 🎉');
+  };
+  speechSynthesis.speak(u);
 }
 
 // 朗读中直接重读当前段（换音色/语速立即生效，无需暂停）
@@ -1073,12 +1100,35 @@ $('#aiFollowInput').addEventListener('keydown', (e) => {
 });
 
 // AI 接口配置（仅存本机 localStorage）
+const AI_PRESETS = {
+  kimi: { base: 'https://api.moonshot.cn/v1', model: 'kimi-k2-0905-preview' },
+  deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }
+};
+function inferPreset() {
+  for (const [k, p] of Object.entries(AI_PRESETS)) {
+    if (aiCfg.base.replace(/\/+$/, '').startsWith(p.base.replace(/\/+$/, ''))) return k;
+  }
+  return 'custom';
+}
+$('#aiPreset').value = inferPreset();
 $('#aiBase').value = aiCfg.base;
 $('#aiKey').value = aiCfg.key;
 $('#aiModel').value = aiCfg.model;
-$('#aiBase').addEventListener('change', (e) => { aiCfg.base = e.target.value.trim(); saveAiCfg(); });
+$('#aiPreset').addEventListener('change', (e) => {
+  const p = AI_PRESETS[e.target.value];
+  if (!p) return; // 自定义：保持现有填写
+  aiCfg.base = p.base;
+  aiCfg.model = p.model;
+  $('#aiBase').value = p.base;
+  $('#aiModel').value = p.model;
+  saveAiCfg();
+  toast(e.target.value === 'deepseek' ? '已切换 DeepSeek，填入 API Key 即可使用' : '已切换 Kimi，填入 API Key 即可使用');
+});
+// 手动改接口/模型后下拉框跟随显示「自定义」
+const syncPreset = () => { $('#aiPreset').value = inferPreset(); };
+$('#aiBase').addEventListener('change', (e) => { aiCfg.base = e.target.value.trim(); saveAiCfg(); syncPreset(); });
 $('#aiKey').addEventListener('change', (e) => { aiCfg.key = e.target.value.trim(); saveAiCfg(); });
-$('#aiModel').addEventListener('change', (e) => { aiCfg.model = e.target.value.trim(); saveAiCfg(); });
+$('#aiModel').addEventListener('change', (e) => { aiCfg.model = e.target.value.trim(); saveAiCfg(); syncPreset(); });
 
 // 测试钩子（供自动化测试用）
 window.__qy = { state, settings, tts, aiCfg, addBookmark, jumpToBookmark, buildTtsQueue, chunkForSpeech, currentTextPos, openAiPanel, sendFollowUp, toggleTts, startTtsFrom, restartTtsCurrent, getSelCtx: () => selCtx };
