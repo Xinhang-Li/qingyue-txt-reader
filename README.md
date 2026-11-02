@@ -4,6 +4,8 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+**[👉 在线体验（GitHub Pages）](https://xinhang-li.github.io/qingyue-txt-reader/)** —— 无需安装，打开即用。
+
 ## ✨ 特性
 
 **简单**
