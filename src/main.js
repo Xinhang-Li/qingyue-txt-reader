@@ -662,11 +662,24 @@ function loadVoices() {
 if ('speechSynthesis' in window) {
   loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
+  // Chrome 桌面版长句播约 15 秒后会假死（speaking 仍为 true 但无声、onend 不触发），
+  // 朗读期间定时 resume 唤醒（业界通用 workaround，无副作用）
+  setInterval(() => {
+    if (tts.active && !tts.paused && speechSynthesis.speaking) speechSynthesis.resume();
+  }, 8000);
 }
 
 // 把长段落按标点切成 ≤120 字的小段，避免语音引擎截断或卡死
+// 逐字符切分，不用正则后行断言（Safari < 16.4 不支持 lookbehind，会直接抛错）
 function chunkForSpeech(text, max = 120) {
-  const parts = text.split(/(?<=[。！？；…])|(?<=[，、：,.!?;:])/);
+  const PUNCT = '。！？；…，、：,.!?;:';
+  const parts = [];
+  let seg = '';
+  for (const ch of text) {
+    seg += ch;
+    if (PUNCT.includes(ch)) { parts.push(seg); seg = ''; }
+  }
+  if (seg) parts.push(seg);
   const out = [];
   let buf = '';
   for (const part of parts) {
@@ -752,12 +765,13 @@ function speakCurrent() {
 
 // 朗读中直接重读当前段（换音色/语速立即生效，无需暂停）
 function restartTtsCurrent() {
-  if (!tts.active || tts.paused) return;
+  if (!tts.active) return;
   const tk = ++tts.token; // 先作废旧 utterance 的回调，再 cancel
   speechSynthesis.cancel();
   // Chrome 对紧贴 cancel 的 speak 可能静默丢弃/误打断，延迟一拍再播报；
   // 连续拖动语速条时只有最后一次延迟生效（令牌比对）
   setTimeout(() => { if (tk === tts.token && tts.active && !tts.paused) speakCurrent(); }, 80);
+  // 暂停中换设置：cancel 已清空队列，恢复时 resumeTts 的看门狗会以新设置重读当前段
 }
 
 function startTts() {
