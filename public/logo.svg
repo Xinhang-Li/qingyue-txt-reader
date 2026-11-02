@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="petal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4adbc8"/>
+      <stop offset="1" stop-color="#28b3a0"/>
+    </linearGradient>
+    <radialGradient id="heart" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#f7e88c"/>
+      <stop offset="1" stop-color="#e6cf4e"/>
+    </radialGradient>
+  </defs>
+  <g transform="translate(128 128)">
+    <g fill="url(#petal)">
+      <path d="M0-112 C30-96 44-62 36-30 C30-8 14 2 0 2 C-14 2 -30-8 -36-30 C-44-62 -30-96 0-112 Z"/>
+      <path d="M0-112 C30-96 44-62 36-30 C30-8 14 2 0 2 C-14 2 -30-8 -36-30 C-44-62 -30-96 0-112 Z" transform="rotate(72)"/>
+      <path d="M0-112 C30-96 44-62 36-30 C30-8 14 2 0 2 C-14 2 -30-8 -36-30 C-44-62 -30-96 0-112 Z" transform="rotate(144)"/>
+      <path d="M0-112 C30-96 44-62 36-30 C30-8 14 2 0 2 C-14 2 -30-8 -36-30 C-44-62 -30-96 0-112 Z" transform="rotate(216)"/>
+      <path d="M0-112 C30-96 44-62 36-30 C30-8 14 2 0 2 C-14 2 -30-8 -36-30 C-44-62 -30-96 0-112 Z" transform="rotate(288)"/>
+    </g>
+    <circle r="21" fill="url(#heart)"/>
+    <circle r="21" fill="none" stroke="#d9bd3e" stroke-width="2" opacity="0.6"/>
+  </g>
+</svg>
