@@ -637,7 +637,7 @@ addEventListener('keydown', (e) => {
 addEventListener('beforeunload', saveProgressNow);
 
 /* ================= 语音朗读（Web Speech API） ================= */
-const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null };
+const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null, token: 0 };
 let ttsVoices = [];
 
 function loadVoices() {
@@ -725,24 +725,38 @@ function speakCurrent() {
   const item = tts.queue[tts.idx];
   if (!item) { stopTts('已朗读完全书 🎉'); return; }
   ttsHighlight(item);
+  const tk = ++tts.token; // 令牌：cancel 后迟到的 onend/onerror 不再推进队列
   const u = new SpeechSynthesisUtterance(item.text);
   u.rate = settings.ttsRate / 10;
   const v = ttsVoices.find((x) => x.voiceURI === settings.ttsVoice);
   if (v) u.voice = v;
-  u.onend = () => { if (!tts.active || tts.paused) return; tts.idx++; speakCurrent(); };
+  u.onend = () => { if (tk !== tts.token || !tts.active || tts.paused) return; tts.idx++; speakCurrent(); };
   u.onerror = (e) => {
+    if (tk !== tts.token) return;
     if (e.error === 'canceled' || e.error === 'interrupted') return;
     if (tts.active) { tts.idx++; speakCurrent(); } // 跳过读不了的片段
   };
   speechSynthesis.speak(u);
 }
 
+// 朗读中直接重读当前段（换音色/语速立即生效，无需暂停）
+function restartTtsCurrent() {
+  if (!tts.active || tts.paused) return;
+  speechSynthesis.cancel();
+  speakCurrent();
+}
+
 function startTts() {
+  startTtsFrom(currentTextPos());
+}
+
+// 从任意文本位置开始朗读（停止先前朗读）
+function startTtsFrom(pos) {
   if (!state.book) return;
   if (!('speechSynthesis' in window)) { toast('当前环境不支持语音朗读'); return; }
   stopAuto(); // 与自动阅读互斥
   speechSynthesis.cancel();
-  tts.queue = buildTtsQueue(currentTextPos());
+  tts.queue = buildTtsQueue(pos);
   if (!tts.queue.length) { toast('后面没有可朗读的内容了'); return; }
   tts.idx = 0;
   tts.active = true;
@@ -794,8 +808,8 @@ $('#ttsCaret').addEventListener('click', (e) => {
   $('#ttsPanel').hidden = !$('#ttsPanel').hidden;
 });
 $('#ttsStopBtn').addEventListener('click', () => stopTts('已停止朗读'));
-$('#voiceSelect').addEventListener('change', (e) => { settings.ttsVoice = e.target.value; applySettings(); });
-$('#ttsRateRange').addEventListener('input', (e) => { settings.ttsRate = +e.target.value; applySettings(); });
+$('#voiceSelect').addEventListener('change', (e) => { settings.ttsVoice = e.target.value; applySettings(); restartTtsCurrent(); });
+$('#ttsRateRange').addEventListener('input', (e) => { settings.ttsRate = +e.target.value; applySettings(); restartTtsCurrent(); });
 
 /* ================= 书签 ================= */
 function bookMarks() {
@@ -1011,6 +1025,14 @@ function sendFollowUp() {
   callAi();
 }
 
+// 划线工具条：从选中文本处开始朗读（停止先前朗读）
+$('#readSelBtn').addEventListener('click', () => {
+  if (!selCtx || !state.book) return;
+  const pos = selCtx.pos;
+  hideSelToolbar();
+  stopTts();
+  startTtsFrom(pos);
+});
 $('#askWhoBtn').addEventListener('click', () => openAiPanel('who'));
 $('#askSummaryBtn').addEventListener('click', () => openAiPanel('summary'));
 $('#askCustomBtn').addEventListener('click', () => openAiPanel('custom'));
@@ -1030,7 +1052,7 @@ $('#aiKey').addEventListener('change', (e) => { aiCfg.key = e.target.value.trim(
 $('#aiModel').addEventListener('change', (e) => { aiCfg.model = e.target.value.trim(); saveAiCfg(); });
 
 // 测试钩子（供自动化测试用）
-window.__qy = { state, settings, tts, aiCfg, addBookmark, jumpToBookmark, buildTtsQueue, chunkForSpeech, currentTextPos, openAiPanel, sendFollowUp, toggleTts, getSelCtx: () => selCtx };
+window.__qy = { state, settings, tts, aiCfg, addBookmark, jumpToBookmark, buildTtsQueue, chunkForSpeech, currentTextPos, openAiPanel, sendFollowUp, toggleTts, startTtsFrom, restartTtsCurrent, getSelCtx: () => selCtx };
 
 /* ================= 启动 ================= */
 applySettings();
