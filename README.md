@@ -1,10 +1,21 @@
+<div align="center">
+
+<img src="public/logo.svg" width="96" alt="轻阅 logo" />
+
 # 轻阅 · QingYue
 
-简单 · 高效 · 优雅的本地 TXT 阅读器。纯前端、零依赖框架，文件不离开你的设备。
+**简单 · 高效 · 优雅的 TXT 阅读器**
+
+纯前端、零依赖框架，文件不离开你的设备。
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
+![Developed with Kimi](https://img.shields.io/badge/developed%20with-Kimi%20(Moonshot%20AI)-1f6feb)
 
 **[👉 在线体验（GitHub Pages）](https://xinhang-li.github.io/qingyue-txt-reader/)** —— 无需安装，打开即用。
+
+<img src="docs/assets/demo.gif" width="720" alt="轻阅功能演示" />
+
+</div>
 
 ## ✨ 特性
 
@@ -20,7 +31,7 @@
 
 **优雅**
 - 衬线字体排版，四种主题：纸白 / 羊皮纸 / 护眼绿 / 暗夜
-- 字号、行距自由调节，顶部阅读进度条
+- 字号、行距、行宽自由调节，顶部阅读进度条
 - 底栏实时显示当前章节、全书字数与预计读完时间
 
 **自动阅读**
@@ -43,6 +54,28 @@
 - 顶栏 🔖 或快捷键 `B` 一键收藏当前位置，自动摘录当前段落作为书签摘要
 - 侧栏「书签」页签管理：点击跳转回原文位置，支持删除，随书籍持久保存
 
+## 📸 界面一览
+
+| 书库首页 | 阅读界面 |
+|---|---|
+| <img src="docs/assets/shot-home.png" alt="书库首页" /> | <img src="docs/assets/shot-reader.png" alt="阅读界面" /> |
+
+| 语音朗读（段落高亮跟随） | AI 划线问答 |
+|---|---|
+| <img src="docs/assets/shot-tts.png" alt="语音朗读" /> | <img src="docs/assets/shot-ai.png" alt="AI 划线问答" /> |
+
+| 暗夜主题 | |
+|---|---|
+| <img src="docs/assets/shot-dark.png" alt="暗夜主题" /> | |
+
+## 🌸 看板娘「青阅」
+
+轻阅的形象代言人——青阅，一个喜欢在窗边读书的女孩，发间别着和品牌 logo 同款的四叶花。
+
+| 安静阅读 | 开心时刻 |
+|---|---|
+| <img src="docs/assets/mascot.jpg" alt="看板娘青阅" /> | <img src="docs/assets/mascot-happy.jpg" alt="开心的青阅" /> |
+
 ## ⌨️ 快捷键
 
 | 按键 | 功能 |
@@ -55,6 +88,10 @@
 | `Esc` | 关闭面板 / 返回书库 |
 
 ## 🚀 快速开始
+
+**在线版**：直接打开 [https://xinhang-li.github.io/qingyue-txt-reader/](https://xinhang-li.github.io/qingyue-txt-reader/) 即可使用。
+
+**本地部署**：
 
 ```bash
 npm install
@@ -82,7 +119,7 @@ npm run build   # 输出到 dist/，纯静态文件，可部署到任意静态�
 
 ## 🧪 测试
 
-`tests/` 目录内置 AI 划线功能的联调测试：
+`tests/` 目录内置 AI 划线功能的联调测试（mock 服务不依赖任何真实 API，模拟 OpenAI 兼容接口的返回）：
 
 ```bash
 python tests/mock_ai_server.py        # 启动本地 mock AI 服务（8899 端口）
@@ -94,12 +131,19 @@ python tests/mock_ai_server.py        # 启动本地 mock AI 服务（8899 端�
 
 ```
 ├── index.html      # 页面结构（书库 + 阅读器）
+├── public/
+│   └── logo.svg    # 四叶花 logo（矢量，favicon + 首页图标）
 ├── src/
 │   ├── main.js     # 全部逻辑：文件读取、章节解析、渲染、搜索、自动阅读、朗读、书签、AI 助手
 │   └── style.css   # 主题变量与全部样式
+├── docs/assets/    # README 素材：演示 GIF、界面截图、看板娘
 ├── tests/          # AI 功能 mock 服务与测试用例
 └── sample.txt      # 演示文件
 ```
+
+## 🙌 致谢
+
+本项目由 **Kimi（Moonshot AI）** 开发——从需求讨论、代码实现、调试排错到部署上线，全程由 Kimi 完成；品牌素材（logo 与看板娘形象）由项目所有者提供。
 
 ## 📄 License
 
