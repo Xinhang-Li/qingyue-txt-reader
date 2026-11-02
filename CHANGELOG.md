@@ -1,15 +1,20 @@
 # 更新日志
 
+## 2026-11-02 · 朗读停顿优化 + DeepSeek 预设
+
+- **句间停顿过久**：原先每段读完要等 `onend` 回调再发起下一句，引擎启动延迟形成明显停顿。改为**预排机制**：开播当前句时同时把下一句排入语音队列（`pumpQueue` / `enqueueSpeech`），句间由引擎无缝衔接；高亮与进度改在 `onstart` 中更新。切分上限由 120 字放宽到 160 字，进一步减少断句次数。
+- **AI 设置新增服务商预设**：下拉可选 Kimi（Moonshot）/ DeepSeek / 自定义，选择后自动填入接口地址与模型名（DeepSeek：`https://api.deepseek.com/v1` + `deepseek-chat`）；手动修改接口或模型时下拉自动回退为「自定义」。
+
 ## 2026-11-02 · 朗读稳定性修复
 
 ### 修复：朗读中切换音色/语速后，读完当前段落就停止（队列停摆）
 
 **现象**：朗读过程中更换音色或调整语速，当前段落能读完，之后朗读永远停止，不再往下推进。
 
-**根因**：`restartTtsCurrent()` 原先的实现是 `speechSynthesis.cancel()` 后同一拍立刻 `speak()`。`cancel()` 在 Chrome 中是异步生效的，紧贴其后的 `speak()` 会让新 utterance 被“误伤”，出现两种结局：
+**根因**：`restartTtsCurrent()` 原先的实现是 `speechSynthesis.cancel()` 后同一拍立刻 `speak()`。`cancel()` 在 Chrome 中是异步生效的，紧贴其后的 `speak()` 会让新 utterance 被"误伤"，出现两种结局：
 
 1. 新 utterance 被**静默丢弃**——`onend` / `onerror` 回调都不触发。而队列推进完全依赖 `onend` 里的 `idx++ → 读下一段`，回调不来，朗读就永远停住。
-2. 新 utterance 收到迟到的 **`interrupted` 错误**（cancel 的余波）。当时 `onerror` 对 `canceled / interrupted` 直接 `return`（该分支本意是处理“用户主动停止”），队列同样停摆。
+2. 新 utterance 收到迟到的 **`interrupted` 错误**（cancel 的余波）。当时 `onerror` 对 `canceled / interrupted` 直接 `return`（该分支本意是处理"用户主动停止"），队列同样停摆。
 
 **修复**（commit `f0b2c51`）：
 

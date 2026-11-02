@@ -254,7 +254,7 @@ kbd {
   animation: fadeDown .15s ease;
 }
 #ttsBtn.playing { color: var(--accent); background: var(--bg-soft); font-weight: 600; }
-#voiceSelect {
+#voiceSelect, #aiPreset {
   flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--fg);
   font-size: 12.5px; outline: none;
