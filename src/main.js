@@ -637,7 +637,7 @@ addEventListener('keydown', (e) => {
 addEventListener('beforeunload', saveProgressNow);
 
 /* ================= 语音朗读（Web Speech API） ================= */
-const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null, token: 0 };
+const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null, token: 0, retries: 0 };
 let ttsVoices = [];
 
 function loadVoices() {
@@ -730,20 +730,34 @@ function speakCurrent() {
   u.rate = settings.ttsRate / 10;
   const v = ttsVoices.find((x) => x.voiceURI === settings.ttsVoice);
   if (v) u.voice = v;
-  u.onend = () => { if (tk !== tts.token || !tts.active || tts.paused) return; tts.idx++; speakCurrent(); };
+  u.onend = () => { if (tk !== tts.token || !tts.active || tts.paused) return; tts.retries = 0; tts.idx++; speakCurrent(); };
   u.onerror = (e) => {
     if (tk !== tts.token) return;
-    if (e.error === 'canceled' || e.error === 'interrupted') return;
+    if (e.error === 'canceled' || e.error === 'interrupted') {
+      // cancel 余波误伤新 utterance：稍候重读当前段，避免队列停摆
+      if (tts.active && !tts.paused && tts.retries < 3) {
+        tts.retries++;
+        setTimeout(() => { if (tk === tts.token && tts.active && !tts.paused) speakCurrent(); }, 150);
+      }
+      return;
+    }
     if (tts.active) { tts.idx++; speakCurrent(); } // 跳过读不了的片段
   };
   speechSynthesis.speak(u);
+  // 看门狗：个别平台 cancel+speak 后 utterance 被静默丢弃（无任何回调），2.5 秒后若无声则重读
+  setTimeout(() => {
+    if (tk === tts.token && tts.active && !tts.paused && !speechSynthesis.speaking && !speechSynthesis.pending) speakCurrent();
+  }, 2500);
 }
 
 // 朗读中直接重读当前段（换音色/语速立即生效，无需暂停）
 function restartTtsCurrent() {
   if (!tts.active || tts.paused) return;
+  const tk = ++tts.token; // 先作废旧 utterance 的回调，再 cancel
   speechSynthesis.cancel();
-  speakCurrent();
+  // Chrome 对紧贴 cancel 的 speak 可能静默丢弃/误打断，延迟一拍再播报；
+  // 连续拖动语速条时只有最后一次延迟生效（令牌比对）
+  setTimeout(() => { if (tk === tts.token && tts.active && !tts.paused) speakCurrent(); }, 80);
 }
 
 function startTts() {
@@ -759,6 +773,7 @@ function startTtsFrom(pos) {
   tts.queue = buildTtsQueue(pos);
   if (!tts.queue.length) { toast('后面没有可朗读的内容了'); return; }
   tts.idx = 0;
+  tts.retries = 0;
   tts.active = true;
   tts.paused = false;
   $('#ttsBtn').textContent = '⏸ 朗读中';
