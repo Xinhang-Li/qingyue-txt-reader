@@ -129,7 +129,7 @@ const state = {
 };
 
 const settings = Object.assign(
-  { fontSize: 19, lineHeight: 19, theme: 'light', autoMode: 'scroll', autoSpeed: 4, autoPageSec: 25, readWidth: 44 },
+  { fontSize: 19, lineHeight: 19, theme: 'light', autoMode: 'scroll', autoSpeed: 4, autoPageSec: 25, readWidth: 44, ttsRate: 10, ttsVoice: '' },
   JSON.parse(localStorage.getItem('qy-settings') || '{}')
 );
 
@@ -154,6 +154,9 @@ function applySettings() {
   $('#speedVal').textContent = settings.autoSpeed + ' 档';
   $('#pageSecRange').value = settings.autoPageSec;
   $('#pageSecVal').textContent = settings.autoPageSec + ' 秒';
+  // 语音朗读面板
+  $('#ttsRateRange').value = settings.ttsRate;
+  $('#ttsRateVal').textContent = (settings.ttsRate / 10).toFixed(1) + 'x';
   localStorage.setItem('qy-settings', JSON.stringify(settings));
 }
 
@@ -220,7 +223,8 @@ async function openFile(file) {
     };
     const old = await db.get(book.key);
     book.progress = old?.progress || null;
-    await db.put({ key: book.key, name: book.name, size: book.size, text, progress: book.progress, updatedAt: Date.now() });
+    book.bookmarks = old?.bookmarks || [];
+    await db.put({ key: book.key, name: book.name, size: book.size, text, progress: book.progress, bookmarks: book.bookmarks, updatedAt: Date.now() });
     enterReader(book);
   } catch (e) {
     console.error(e);
@@ -234,6 +238,9 @@ function enterReader(book) {
   state.renderedUpTo = -1;
   state.search = { query: '', matches: [], idx: -1 };
   contentEl.innerHTML = '';
+  $('#aiPanel').hidden = true;
+  $('#ttsPanel').hidden = true;
+  hideSelToolbar();
 
   $('#home').hidden = true;
   $('#reader').hidden = false;
@@ -261,6 +268,7 @@ function enterReader(book) {
 
 function leaveReader() {
   stopAuto();
+  stopTts();
   saveProgressNow();
   state.book = null;
   state.chapters = [];
@@ -268,6 +276,9 @@ function leaveReader() {
   $('#home').hidden = false;
   $('#sidebar').hidden = true;
   $('#autoPanel').hidden = true;
+  $('#ttsPanel').hidden = true;
+  $('#aiPanel').hidden = true;
+  hideSelToolbar();
   refreshRecent();
 }
 
@@ -329,7 +340,7 @@ const saveProgressNow = () => {
   const el = state.chapters[cur]?.el;
   const progress = { chapter: cur, offset: el ? scrollBox.scrollTop - el.offsetTop : 0, fraction: frac };
   state.book.progress = progress;
-  db.put({ key: state.book.key, name: state.book.name, size: state.book.size, text: state.book.text, progress, updatedAt: Date.now() }).catch(() => {});
+  db.put({ key: state.book.key, name: state.book.name, size: state.book.size, text: state.book.text, progress, bookmarks: state.book.bookmarks || [], updatedAt: Date.now() }).catch(() => {});
 };
 const saveProgressDebounced = debounce(saveProgressNow, 800);
 
@@ -353,6 +364,7 @@ function atRealEnd() {
 
 function startAuto() {
   if (!state.book || auto.active) return;
+  stopTts(); // 朗读与自动阅读互斥
   auto.active = true;
   $('#autoBtn').textContent = '⏸ 暂停';
   $('#autoBtn').classList.add('playing');
@@ -540,15 +552,17 @@ $('#tocBtn').addEventListener('click', () => {
   sb.hidden = !sb.hidden;
   if (!sb.hidden) { switchTab('toc'); scrollActiveTocIntoView(); }
 });
-$('#settingsBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#autoPanel').hidden = true; $('#settingsPanel').hidden = !$('#settingsPanel').hidden; });
+$('#settingsBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#autoPanel').hidden = true; $('#ttsPanel').hidden = true; $('#settingsPanel').hidden = !$('#settingsPanel').hidden; });
 document.addEventListener('click', (e) => {
-  if (!$('#settingsPanel').hidden && !e.target.closest('#settingsPanel')) $('#settingsPanel').hidden = true;
-  if (!$('#autoPanel').hidden && !e.target.closest('#autoPanel') && !e.target.closest('#autoCaret')) $('#autoPanel').hidden = true;
+  if (!$('#settingsPanel').hidden && !e.target.closest('#settingsPanel') && !e.target.closest('#settingsBtn')) $('#settingsPanel').hidden = true;
+  if (!$('#autoPanel').hidden && !e.target.closest('#autoPanel') && !e.target.closest('#autoCaret') && !e.target.closest('#autoBtn')) $('#autoPanel').hidden = true;
+  if (!$('#ttsPanel').hidden && !e.target.closest('#ttsPanel') && !e.target.closest('#ttsCaret') && !e.target.closest('#ttsBtn')) $('#ttsPanel').hidden = true;
+  if (!$('#selToolbar').hidden && !e.target.closest('#selToolbar')) hideSelToolbar();
 });
 
 // 自动阅读
 $('#autoBtn').addEventListener('click', toggleAuto);
-$('#autoCaret').addEventListener('click', (e) => { e.stopPropagation(); $('#settingsPanel').hidden = true; $('#autoPanel').hidden = !$('#autoPanel').hidden; });
+$('#autoCaret').addEventListener('click', (e) => { e.stopPropagation(); $('#settingsPanel').hidden = true; $('#ttsPanel').hidden = true; $('#autoPanel').hidden = !$('#autoPanel').hidden; });
 $('#modeScroll').addEventListener('click', () => { settings.autoMode = 'scroll'; applySettings(); if (auto.active) { stopAuto(); startAuto(); } });
 $('#modePage').addEventListener('click', () => { settings.autoMode = 'page'; applySettings(); if (auto.active) { stopAuto(); startAuto(); } });
 $('#speedRange').addEventListener('input', (e) => { settings.autoSpeed = +e.target.value; applySettings(); });
@@ -568,15 +582,18 @@ $('#fontDown').addEventListener('click', () => { settings.fontSize = Math.max(14
 
 // 侧栏 tab
 function switchTab(name) {
-  const isToc = name === 'toc';
-  $('#tabToc').classList.toggle('active', isToc);
-  $('#tabSearch').classList.toggle('active', !isToc);
-  $('#tocPanel').hidden = !isToc;
-  $('#searchPanel').hidden = isToc;
-  if (!isToc) $('#searchInput').focus();
+  $('#tabToc').classList.toggle('active', name === 'toc');
+  $('#tabSearch').classList.toggle('active', name === 'search');
+  $('#tabMark').classList.toggle('active', name === 'mark');
+  $('#tocPanel').hidden = name !== 'toc';
+  $('#searchPanel').hidden = name !== 'search';
+  $('#markPanel').hidden = name !== 'mark';
+  if (name === 'search') $('#searchInput').focus();
+  if (name === 'mark') renderBookmarks();
 }
 $('#tabToc').addEventListener('click', () => switchTab('toc'));
 $('#tabSearch').addEventListener('click', () => switchTab('search'));
+$('#tabMark').addEventListener('click', () => switchTab('mark'));
 $('#sideClose').addEventListener('click', () => ($('#sidebar').hidden = true));
 
 // 搜索
@@ -601,11 +618,16 @@ addEventListener('keydown', (e) => {
     if (!$('#sidebar').hidden) { $('#sidebar').hidden = true; return; }
     if (!$('#settingsPanel').hidden) { $('#settingsPanel').hidden = true; return; }
     if (!$('#autoPanel').hidden) { $('#autoPanel').hidden = true; return; }
+    if (!$('#ttsPanel').hidden) { $('#ttsPanel').hidden = true; return; }
+    if (!$('#aiPanel').hidden) { $('#aiPanel').hidden = true; return; }
+    hideSelToolbar();
     if (!typing) leaveReader();
     return;
   }
   if (typing) return;
   if (e.key === ' ') { e.preventDefault(); toggleAuto(); return; }
+  if (e.key === 'r' || e.key === 'R') { toggleTts(); return; }
+  if (e.key === 'b' || e.key === 'B') { addBookmark(); return; }
   if (e.key === '/') { e.preventDefault(); $('#sidebar').hidden = false; switchTab('search'); }
   if (e.key === 'ArrowRight') { stopAuto(); jumpToChapter(Math.min(state.currentChapter + 1, state.chapters.length - 1)); }
   if (e.key === 'ArrowLeft') { stopAuto(); jumpToChapter(Math.max(state.currentChapter - 1, 0)); }
@@ -613,6 +635,402 @@ addEventListener('keydown', (e) => {
 
 // 离开页面前保存进度
 addEventListener('beforeunload', saveProgressNow);
+
+/* ================= 语音朗读（Web Speech API） ================= */
+const tts = { active: false, paused: false, queue: [], idx: 0, readingEl: null };
+let ttsVoices = [];
+
+function loadVoices() {
+  if (!('speechSynthesis' in window)) return;
+  const list = speechSynthesis.getVoices();
+  ttsVoices = list.filter((v) => v.lang.toLowerCase().replace('_', '-').startsWith('zh'));
+  if (!ttsVoices.length) ttsVoices = list; // 无中文语音时列出全部
+  const sel = $('#voiceSelect');
+  sel.innerHTML = '';
+  const o0 = document.createElement('option');
+  o0.value = '';
+  o0.textContent = '系统默认';
+  sel.appendChild(o0);
+  ttsVoices.forEach((v) => {
+    const o = document.createElement('option');
+    o.value = v.voiceURI;
+    o.textContent = v.name + (v.localService ? '' : '（在线）');
+    sel.appendChild(o);
+  });
+  sel.value = settings.ttsVoice || '';
+}
+if ('speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+// 把长段落按标点切成 ≤120 字的小段，避免语音引擎截断或卡死
+function chunkForSpeech(text, max = 120) {
+  const parts = text.split(/(?<=[。！？；…])|(?<=[，、：,.!?;:])/);
+  const out = [];
+  let buf = '';
+  for (const part of parts) {
+    if (buf && (buf + part).length > max) { out.push(buf); buf = ''; }
+    buf += part;
+    while (buf.length > max) { out.push(buf.slice(0, max)); buf = buf.slice(max); }
+  }
+  if (buf.trim()) out.push(buf);
+  return out.filter((s) => s.trim());
+}
+
+// 当前视口顶部附近的绝对文本位置
+function currentTextPos() {
+  const cur = locateCurrentChapter();
+  const ch = state.chapters[cur];
+  if (!ch) return 0;
+  const top = scrollBox.scrollTop + 90;
+  for (const s of ch.paraSpans || []) {
+    if (s.el.offsetTop + s.el.offsetHeight > top) return s.start;
+  }
+  return ch.start;
+}
+
+function buildTtsQueue(fromPos) {
+  const q = [];
+  for (let ci = chapterOf(fromPos); ci < state.chapters.length; ci++) {
+    const c = state.chapters[ci];
+    const body = state.book.text.slice(c.start, c.end);
+    const LINE_RE2 = /[^\n]*\S[^\n]*/g;
+    let lm;
+    while ((lm = LINE_RE2.exec(body)) !== null) {
+      const t = lm[0].trim();
+      const start = c.start + lm.index + (lm[0].length - lm[0].trimStart().length);
+      if (start + t.length <= fromPos) continue;
+      for (const piece of chunkForSpeech(t)) q.push({ ci, paraStart: start, text: piece });
+    }
+  }
+  return q;
+}
+
+function ttsHighlight(item) {
+  if (tts.readingEl) { tts.readingEl.classList.remove('reading'); tts.readingEl = null; }
+  renderUntil(Math.min(item.ci + 1, state.chapters.length - 1));
+  const ch = state.chapters[item.ci];
+  const span = ch && (ch.paraSpans || []).find((s) => s.start === item.paraStart);
+  if (span) {
+    span.el.classList.add('reading');
+    tts.readingEl = span.el;
+    span.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    updateProgress();
+  }
+}
+
+function speakCurrent() {
+  if (!tts.active || tts.paused) return;
+  const item = tts.queue[tts.idx];
+  if (!item) { stopTts('已朗读完全书 🎉'); return; }
+  ttsHighlight(item);
+  const u = new SpeechSynthesisUtterance(item.text);
+  u.rate = settings.ttsRate / 10;
+  const v = ttsVoices.find((x) => x.voiceURI === settings.ttsVoice);
+  if (v) u.voice = v;
+  u.onend = () => { if (!tts.active || tts.paused) return; tts.idx++; speakCurrent(); };
+  u.onerror = (e) => {
+    if (e.error === 'canceled' || e.error === 'interrupted') return;
+    if (tts.active) { tts.idx++; speakCurrent(); } // 跳过读不了的片段
+  };
+  speechSynthesis.speak(u);
+}
+
+function startTts() {
+  if (!state.book) return;
+  if (!('speechSynthesis' in window)) { toast('当前环境不支持语音朗读'); return; }
+  stopAuto(); // 与自动阅读互斥
+  speechSynthesis.cancel();
+  tts.queue = buildTtsQueue(currentTextPos());
+  if (!tts.queue.length) { toast('后面没有可朗读的内容了'); return; }
+  tts.idx = 0;
+  tts.active = true;
+  tts.paused = false;
+  $('#ttsBtn').textContent = '⏸ 朗读中';
+  $('#ttsBtn').classList.add('playing');
+  speakCurrent();
+  toast('开始朗读');
+}
+
+function pauseTts() {
+  tts.paused = true;
+  speechSynthesis.pause();
+  $('#ttsBtn').textContent = '▶ 继续';
+}
+
+function resumeTts() {
+  tts.paused = false;
+  $('#ttsBtn').textContent = '⏸ 朗读中';
+  speechSynthesis.resume();
+  // 个别平台 resume 无效：若 2 秒后仍无声音，重新播报当前段
+  setTimeout(() => {
+    if (tts.active && !tts.paused && !speechSynthesis.speaking && !speechSynthesis.pending) speakCurrent();
+  }, 2000);
+}
+
+function stopTts(msg) {
+  if (!tts.active) return;
+  tts.active = false;
+  tts.paused = false;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  if (tts.readingEl) { tts.readingEl.classList.remove('reading'); tts.readingEl = null; }
+  $('#ttsBtn').textContent = '🔊 朗读';
+  $('#ttsBtn').classList.remove('playing');
+  if (msg) toast(msg);
+}
+
+function toggleTts() {
+  if (!tts.active) startTts();
+  else if (tts.paused) resumeTts();
+  else pauseTts();
+}
+
+$('#ttsBtn').addEventListener('click', toggleTts);
+$('#ttsCaret').addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#settingsPanel').hidden = true;
+  $('#autoPanel').hidden = true;
+  $('#ttsPanel').hidden = !$('#ttsPanel').hidden;
+});
+$('#ttsStopBtn').addEventListener('click', () => stopTts('已停止朗读'));
+$('#voiceSelect').addEventListener('change', (e) => { settings.ttsVoice = e.target.value; applySettings(); });
+$('#ttsRateRange').addEventListener('input', (e) => { settings.ttsRate = +e.target.value; applySettings(); });
+
+/* ================= 书签 ================= */
+function bookMarks() {
+  if (!state.book.bookmarks) state.book.bookmarks = [];
+  return state.book.bookmarks;
+}
+
+function persistBook() {
+  const b = state.book;
+  return db.put({ key: b.key, name: b.name, size: b.size, text: b.text, progress: b.progress || null, bookmarks: bookMarks(), updatedAt: Date.now() }).catch(() => {});
+}
+
+function addBookmark() {
+  if (!state.book) return;
+  const cur = locateCurrentChapter();
+  const ch = state.chapters[cur];
+  const pos = currentTextPos();
+  const snippet = state.book.text.slice(pos, pos + 24).replace(/\n/g, ' ').trim();
+  const marks = bookMarks();
+  if (marks.some((m) => m.pos === pos)) { toast('此处已有书签'); return; }
+  marks.push({
+    pos,
+    chapter: cur,
+    offset: ch.el ? scrollBox.scrollTop - ch.el.offsetTop : 0,
+    snippet,
+    chapterTitle: ch.title,
+    time: Date.now(),
+  });
+  marks.sort((a, b) => a.pos - b.pos);
+  persistBook();
+  renderBookmarks();
+  toast('已添加书签 🔖');
+}
+
+function renderBookmarks() {
+  const ul = $('#markList');
+  ul.innerHTML = '';
+  const marks = state.book ? bookMarks() : [];
+  if (!marks.length) {
+    const li = document.createElement('li');
+    li.className = 'mark-empty';
+    li.textContent = '暂无书签 · 读到喜欢的地方按 B 或点顶栏 🔖';
+    ul.appendChild(li);
+    return;
+  }
+  for (const m of marks) {
+    const li = document.createElement('li');
+    const d = new Date(m.time);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    li.innerHTML = '<div class="mark-text"><span class="mark-name"></span><span class="mark-info"></span></div><button class="recent-del" title="删除">✕</button>';
+    li.querySelector('.mark-name').textContent = m.snippet || '（空白处）';
+    li.querySelector('.mark-info').textContent = `${m.chapterTitle || ''} · ${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('.recent-del')) return;
+      jumpToBookmark(m);
+      if (innerWidth < 760) $('#sidebar').hidden = true;
+    });
+    li.querySelector('.recent-del').addEventListener('click', () => {
+      const arr = bookMarks();
+      const i = arr.indexOf(m);
+      if (i >= 0) arr.splice(i, 1);
+      persistBook();
+      renderBookmarks();
+      toast('已删除书签');
+    });
+    ul.appendChild(li);
+  }
+}
+
+function jumpToBookmark(m) {
+  const ci = Math.min(m.chapter, state.chapters.length - 1);
+  renderUntil(Math.min(ci + 1, state.chapters.length - 1));
+  requestAnimationFrame(() => {
+    const el = state.chapters[ci].el;
+    if (el) scrollBox.scrollTop = Math.max(0, el.offsetTop + (m.offset || 0) - 70);
+    state.currentChapter = ci;
+    updateProgress();
+  });
+}
+
+$('#bookmarkBtn').addEventListener('click', addBookmark);
+
+/* ================= AI 划线辅助阅读 ================= */
+const aiCfg = Object.assign(
+  { base: 'https://api.moonshot.cn/v1', key: '', model: 'kimi-k2-0905-preview' },
+  JSON.parse(localStorage.getItem('qy-ai') || '{}')
+);
+function saveAiCfg() { localStorage.setItem('qy-ai', JSON.stringify(aiCfg)); }
+
+let selCtx = null; // { text, pos, chapterTitle }
+let aiConv = [];   // 当前划线内容的对话记录
+
+function hideSelToolbar() { const tb = $('#selToolbar'); if (tb) tb.hidden = true; }
+
+function showSelToolbar(rect) {
+  const tb = $('#selToolbar');
+  tb.hidden = false;
+  const w = tb.offsetWidth, h = tb.offsetHeight;
+  let x = rect.left + rect.width / 2 - w / 2;
+  x = Math.max(8, Math.min(x, innerWidth - w - 8));
+  let y = rect.top - h - 8;
+  if (y < 56) y = rect.bottom + 8;
+  tb.style.left = x + 'px';
+  tb.style.top = y + 'px';
+}
+
+document.addEventListener('mouseup', (e) => {
+  if (e.target.closest('#selToolbar') || e.target.closest('#aiPanel') || e.target.closest('#sidebar')) return;
+  setTimeout(() => {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !state.book || $('#reader').hidden) { hideSelToolbar(); return; }
+    const range = sel.getRangeAt(0);
+    const text = range.toString().trim();
+    if (!text) { hideSelToolbar(); return; }
+    if (!contentEl.contains(range.commonAncestorContainer)) { hideSelToolbar(); return; }
+    const sec = range.startContainer.parentElement && range.startContainer.parentElement.closest('section');
+    const ci = sec ? +sec.dataset.idx : locateCurrentChapter();
+    const ch = state.chapters[ci];
+    const span = ch && (ch.paraSpans || []).find((s) => s.el.contains(range.startContainer));
+    selCtx = {
+      text: text.slice(0, 500),
+      pos: span ? span.start : (ch ? ch.start : 0),
+      chapterTitle: ch ? ch.title : '',
+    };
+    showSelToolbar(range.getBoundingClientRect());
+  }, 10);
+});
+scrollBox.addEventListener('scroll', hideSelToolbar, { passive: true });
+
+function pushMsg(cls, text) {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  $('#aiAnswer').appendChild(div);
+  $('#aiAnswer').scrollTop = 1e9;
+  return div;
+}
+
+function openAiPanel(mode) {
+  hideSelToolbar();
+  if (!selCtx || !state.book) return;
+  aiConv = [];
+  $('#aiPanel').hidden = false;
+  const s = selCtx;
+  $('#aiSelected').textContent = '「' + (s.text.length > 60 ? s.text.slice(0, 60) + '…' : s.text) + '」';
+  $('#aiAnswer').innerHTML = '';
+  if (!aiCfg.key) {
+    pushMsg('ai-err', '还没有配置 AI 接口。点顶栏 ⚙ 填入 API Key 后再试（支持 Kimi / DeepSeek / OpenAI 等兼容接口，Key 仅保存在本机）。');
+    return;
+  }
+  const before = state.book.text.slice(Math.max(0, s.pos - 350), s.pos);
+  const after = state.book.text.slice(s.pos + s.text.length, s.pos + s.text.length + 350);
+  const ctxStr = `【上下文】\n…${before}〖${s.text}〗${after}…`;
+  let user;
+  if (mode === 'who') {
+    user = `我正在读《${state.book.name}》（${s.chapterTitle}），对划线内容不太了解：「${s.text}」。\n请介绍这个人/事物：身份、背景、与故事情节的关系。若从上下文无法确定，请基于文本合理推测并说明不确定之处，不要编造。回答控制在 200 字以内。\n\n${ctxStr}`;
+    pushMsg('ai-q', '✦ 介绍一下这段内容');
+  } else if (mode === 'summary') {
+    user = `我正在读《${state.book.name}》（${s.chapterTitle}），划了一段内容：「${s.text}」。\n请用 3~5 句话概述这段内容的情节要点，语言简洁，不要剧透上下文之外的内容。\n\n${ctxStr}`;
+    pushMsg('ai-q', '≡ 概述这段内容');
+  } else {
+    $('#aiFollowInput').focus();
+    return; // 提问模式：等用户输入问题
+  }
+  aiConv = [{ role: 'user', content: user }];
+  callAi();
+}
+
+async function callAi() {
+  const loading = pushMsg('ai-loading', 'AI 思考中…');
+  try {
+    const res = await fetch(aiCfg.base.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + aiCfg.key },
+      body: JSON.stringify({
+        model: aiCfg.model,
+        messages: [{ role: 'system', content: '你是「轻阅」TXT 阅读器内置的阅读助手，用简洁、准确的中文回答读者关于划线内容的问题。' }, ...aiConv],
+        temperature: 0.3,
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${t.slice(0, 120)}`);
+    }
+    const data = await res.json();
+    const ans = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim() || '（没有返回内容）';
+    aiConv.push({ role: 'assistant', content: ans });
+    loading.remove();
+    pushMsg('ai-a', ans);
+  } catch (e2) {
+    loading.remove();
+    pushMsg('ai-err', '请求失败：' + (e2.message || e2));
+  }
+}
+
+function sendFollowUp() {
+  const q = $('#aiFollowInput').value.trim();
+  if (!q || !state.book) return;
+  if (!aiCfg.key) { pushMsg('ai-err', '请先在 ⚙ 设置中填写 API Key。'); return; }
+  if (!aiConv.length) {
+    const s = selCtx;
+    if (!s) return;
+    aiConv = [{
+      role: 'user',
+      content: `我正在读《${state.book.name}》（${s.chapterTitle}），划了一段内容：「${s.text}」。\n我的问题：${q}\n请结合上下文回答，简洁准确。`,
+    }];
+  } else {
+    aiConv.push({ role: 'user', content: q });
+  }
+  $('#aiFollowInput').value = '';
+  pushMsg('ai-q', q);
+  callAi();
+}
+
+$('#askWhoBtn').addEventListener('click', () => openAiPanel('who'));
+$('#askSummaryBtn').addEventListener('click', () => openAiPanel('summary'));
+$('#askCustomBtn').addEventListener('click', () => openAiPanel('custom'));
+$('#aiClose').addEventListener('click', () => { $('#aiPanel').hidden = true; });
+$('#aiSendBtn').addEventListener('click', sendFollowUp);
+$('#aiFollowInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); sendFollowUp(); }
+  e.stopPropagation();
+});
+
+// AI 接口配置（仅存本机 localStorage）
+$('#aiBase').value = aiCfg.base;
+$('#aiKey').value = aiCfg.key;
+$('#aiModel').value = aiCfg.model;
+$('#aiBase').addEventListener('change', (e) => { aiCfg.base = e.target.value.trim(); saveAiCfg(); });
+$('#aiKey').addEventListener('change', (e) => { aiCfg.key = e.target.value.trim(); saveAiCfg(); });
+$('#aiModel').addEventListener('change', (e) => { aiCfg.model = e.target.value.trim(); saveAiCfg(); });
+
+// 测试钩子（供自动化测试用）
+window.__qy = { state, settings, tts, aiCfg, addBookmark, jumpToBookmark, buildTtsQueue, chunkForSpeech, currentTextPos, openAiPanel, sendFollowUp, toggleTts, getSelCtx: () => selCtx };
 
 /* ================= 启动 ================= */
 applySettings();
