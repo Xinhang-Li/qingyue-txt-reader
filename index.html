@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>轻阅 · TXT 阅读器</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>" />
-  <script type="module" crossorigin src="./assets/index-DOwySiSu.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-Bx6TThBL.css">
+  <script type="module" crossorigin src="./assets/index-Dbl7dS-c.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Df_rc8A9.css">
 </head>
 <body data-theme="light">
   <!-- ============ 书库（首页） ============ -->
@@ -29,7 +29,7 @@
       <ul id="recentList"></ul>
     </div>
 
-    <footer class="home-footer">纯本地运行，文件不会上传 · 快捷键：<kbd>/</kbd> 搜索 <kbd>←</kbd><kbd>→</kbd> 翻章 <kbd>空格</kbd> 自动阅读 <kbd>Esc</kbd> 返回</footer>
+    <footer class="home-footer">纯本地运行，文件不会上传 · 快捷键：<kbd>/</kbd> 搜索 <kbd>←</kbd><kbd>→</kbd> 翻章 <kbd>空格</kbd> 自动阅读 <kbd>R</kbd> 朗读 <kbd>B</kbd> 书签 <kbd>Esc</kbd> 返回</footer>
   </section>
 
   <!-- ============ 阅读界面 ============ -->
@@ -45,6 +45,11 @@
           <button id="autoBtn" class="ghost-btn" title="自动阅读 (空格)">▶ 自动</button>
           <button id="autoCaret" class="ghost-btn caret" title="自动阅读设置">▾</button>
         </div>
+        <div class="auto-group">
+          <button id="ttsBtn" class="ghost-btn" title="语音朗读 (R)">🔊 朗读</button>
+          <button id="ttsCaret" class="ghost-btn caret" title="朗读设置">▾</button>
+        </div>
+        <button id="bookmarkBtn" class="ghost-btn" title="添加书签 (B)">🔖</button>
         <button id="fontDown" class="ghost-btn" title="减小字号">A−</button>
         <button id="fontUp" class="ghost-btn" title="增大字号">A＋</button>
         <button id="settingsBtn" class="ghost-btn" title="阅读设置">⚙</button>
@@ -72,11 +77,29 @@
       <p class="auto-tip">空格 开始/暂停 · 手动滚动即暂停 · 读到末尾自动停止</p>
     </div>
 
+    <div id="ttsPanel" hidden>
+      <div class="set-row">
+        <span>音色</span>
+        <select id="voiceSelect"></select>
+      </div>
+      <div class="set-row">
+        <span>语速</span>
+        <input id="ttsRateRange" type="range" min="5" max="20" step="1" />
+        <em id="ttsRateVal"></em>
+      </div>
+      <div class="set-row">
+        <span>控制</span>
+        <button id="ttsStopBtn" class="seg-btn">■ 停止朗读</button>
+      </div>
+      <p class="auto-tip">从当前屏幕位置开始朗读 · <kbd>R</kbd> 开始/暂停 · 朗读时自动跟随滚动</p>
+    </div>
+
     <aside id="sidebar" hidden>
       <div class="side-head">
         <div class="side-tabs">
           <button id="tabToc" class="tab active">目录</button>
           <button id="tabSearch" class="tab">搜索</button>
+          <button id="tabMark" class="tab">书签</button>
         </div>
         <button id="sideClose" class="ghost-btn">✕</button>
       </div>
@@ -93,6 +116,9 @@
           </div>
         </div>
         <ul id="searchResults"></ul>
+      </div>
+      <div id="markPanel" hidden>
+        <ul id="markList"></ul>
       </div>
     </aside>
 
@@ -121,6 +147,20 @@
           <button class="theme-dot" data-theme="dark" style="background:#191b1f" title="暗夜"></button>
         </div>
       </div>
+      <div class="set-divider"></div>
+      <div class="set-row">
+        <span>接口</span>
+        <input id="aiBase" type="text" placeholder="https://api.moonshot.cn/v1" autocomplete="off" />
+      </div>
+      <div class="set-row">
+        <span>Key</span>
+        <input id="aiKey" type="password" placeholder="API Key（仅存本机）" autocomplete="off" />
+      </div>
+      <div class="set-row">
+        <span>模型</span>
+        <input id="aiModel" type="text" placeholder="kimi-k2-0905-preview" autocomplete="off" />
+      </div>
+      <p class="auto-tip">划线即可问 AI：介绍人物 / 概述剧情 · 支持任意 OpenAI 兼容接口</p>
     </div>
 
     <main id="scrollBox">
@@ -134,6 +174,24 @@
       <span id="progressText"></span>
     </footer>
   </section>
+
+  <div id="selToolbar" hidden>
+    <button id="askWhoBtn">✦ 介绍</button>
+    <button id="askSummaryBtn">≡ 概述</button>
+    <button id="askCustomBtn">？提问</button>
+  </div>
+
+  <div id="aiPanel" hidden>
+    <div class="ai-head">
+      <span id="aiSelected" class="ai-selected"></span>
+      <button id="aiClose" class="ghost-btn">✕</button>
+    </div>
+    <div id="aiAnswer" class="ai-answer"></div>
+    <div class="ai-followup">
+      <input id="aiFollowInput" type="text" placeholder="针对划线内容继续追问…" autocomplete="off" />
+      <button id="aiSendBtn" class="ghost-btn">发送</button>
+    </div>
+  </div>
 
   <div id="dropOverlay" hidden><div>松开鼠标，开始阅读</div></div>
   <div id="toast" hidden></div>
