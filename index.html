@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>轻阅 · TXT 阅读器</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>" />
+</head>
+<body data-theme="light">
+  <!-- ============ 书库（首页） ============ -->
+  <section id="home">
+    <div class="hero">
+      <h1 class="logo">轻阅</h1>
+      <p class="slogan">简单 · 高效 · 优雅的 TXT 阅读器</p>
+      <div id="dropzone" role="button" tabindex="0" aria-label="打开文件">
+        <div class="dz-icon">⇩</div>
+        <p class="dz-main">拖入 <b>.txt</b> 文件</p>
+        <p class="dz-sub">或</p>
+        <button id="pickBtn" class="btn-primary">选择文件</button>
+      </div>
+      <input type="file" id="fileInput" accept=".txt,text/plain" hidden />
+      <p class="feature-line">UTF-8 / GBK 自动识别 · 章节智能解析 · 大文件分段渲染 · 阅读进度自动保存</p>
+    </div>
+
+    <div id="recentWrap" hidden>
+      <h2 class="recent-title">最近阅读</h2>
+      <ul id="recentList"></ul>
+    </div>
+
+    <footer class="home-footer">纯本地运行，文件不会上传 · 快捷键：<kbd>/</kbd> 搜索 <kbd>←</kbd><kbd>→</kbd> 翻章 <kbd>空格</kbd> 自动阅读 <kbd>Esc</kbd> 返回</footer>
+  </section>
+
+  <!-- ============ 阅读界面 ============ -->
+  <section id="reader" hidden>
+    <div id="progressTrack"><div id="progressFill"></div></div>
+
+    <header id="topbar">
+      <button id="backBtn" class="ghost-btn" title="返回书库 (Esc)">‹ 书库</button>
+      <span id="bookTitle" class="book-title"></span>
+      <div class="top-actions">
+        <button id="tocBtn" class="ghost-btn" title="目录 / 搜索 (/)">☰ 目录</button>
+        <div class="auto-group">
+          <button id="autoBtn" class="ghost-btn" title="自动阅读 (空格)">▶ 自动</button>
+          <button id="autoCaret" class="ghost-btn caret" title="自动阅读设置">▾</button>
+        </div>
+        <button id="fontDown" class="ghost-btn" title="减小字号">A−</button>
+        <button id="fontUp" class="ghost-btn" title="增大字号">A＋</button>
+        <button id="settingsBtn" class="ghost-btn" title="阅读设置">⚙</button>
+      </div>
+    </header>
+
+    <div id="autoPanel" hidden>
+      <div class="set-row">
+        <span>模式</span>
+        <div class="mode-seg">
+          <button id="modeScroll" class="seg-btn">连续滚动</button>
+          <button id="modePage" class="seg-btn">整屏翻页</button>
+        </div>
+      </div>
+      <div class="set-row" id="speedRow">
+        <span>速度</span>
+        <input id="speedRange" type="range" min="1" max="10" step="1" />
+        <em id="speedVal"></em>
+      </div>
+      <div class="set-row" id="pageRow" hidden>
+        <span>间隔</span>
+        <input id="pageSecRange" type="range" min="5" max="60" step="5" />
+        <em id="pageSecVal"></em>
+      </div>
+      <p class="auto-tip">空格 开始/暂停 · 手动滚动即暂停 · 读到末尾自动停止</p>
+    </div>
+
+    <aside id="sidebar" hidden>
+      <div class="side-head">
+        <div class="side-tabs">
+          <button id="tabToc" class="tab active">目录</button>
+          <button id="tabSearch" class="tab">搜索</button>
+        </div>
+        <button id="sideClose" class="ghost-btn">✕</button>
+      </div>
+      <div id="tocPanel">
+        <ul id="tocList"></ul>
+      </div>
+      <div id="searchPanel" hidden>
+        <div class="search-box">
+          <input id="searchInput" type="search" placeholder="搜索全文…" autocomplete="off" />
+          <div class="search-nav">
+            <span id="searchInfo"></span>
+            <button id="prevMatch" class="ghost-btn" title="上一处 (Shift+Enter)">↑</button>
+            <button id="nextMatch" class="ghost-btn" title="下一处 (Enter)">↓</button>
+          </div>
+        </div>
+        <ul id="searchResults"></ul>
+      </div>
+    </aside>
+
+    <div id="settingsPanel" hidden>
+      <div class="set-row">
+        <span>字号</span>
+        <input id="fontSizeRange" type="range" min="14" max="28" step="1" />
+        <em id="fontSizeVal"></em>
+      </div>
+      <div class="set-row">
+        <span>行距</span>
+        <input id="lineHeightRange" type="range" min="15" max="24" step="1" />
+        <em id="lineHeightVal"></em>
+      </div>
+      <div class="set-row">
+        <span>主题</span>
+        <div class="theme-dots">
+          <button class="theme-dot" data-theme="light" style="background:#fdfbf7" title="纸白"></button>
+          <button class="theme-dot" data-theme="sepia" style="background:#f5ecd9" title="羊皮纸"></button>
+          <button class="theme-dot" data-theme="green" style="background:#e4efe4" title="护眼绿"></button>
+          <button class="theme-dot" data-theme="dark" style="background:#191b1f" title="暗夜"></button>
+        </div>
+      </div>
+    </div>
+
+    <main id="scrollBox">
+      <article id="content"></article>
+      <div id="sentinel"></div>
+    </main>
+
+    <footer id="statusbar">
+      <span id="chapterName"></span>
+      <span id="bookMeta"></span>
+      <span id="progressText"></span>
+    </footer>
+  </section>
+
+  <div id="dropOverlay" hidden><div>松开鼠标，开始阅读</div></div>
+  <div id="toast" hidden></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
